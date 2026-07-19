@@ -1,200 +1,148 @@
-
 import streamlit as st
 import time
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Endüstriyel Motor Montaj Masası", layout="wide")
+st.set_page_config(page_title="Otomatik Yıldız-Üçgen Simülatörü", layout="wide")
 
-# --- ATÖLYE SES/UYANIKLIK EFEKTLERİ VEYA GÖRSEL BAŞLIK ---
-st.title("👨‍🔧 Atölye Masası: 3-Fazlı Asenkron Motor Manuel Bağlantı İstasyonu")
-st.write("**İş Emri:** Önündeki 5.5 kW'lık döküm gövde sincap kafesli asenkron motoru mekanik olarak topla, klemens kutusunu şebekeye hazırla ve test panosundan enerjilendir.")
+st.title("⚡ Otomatik Yıldız-Üçgen Yol Verme & Kumanda Panosu Simülatörü")
+st.write("Bu simülasyonda motor dönerken bağlantıların pano içerisindeki kontaktörler ve zaman rölesi ile nasıl otomatik değiştirildiğini inceleyebilirsiniz.")
 
 # --- INITIALIZATION ---
-if "vida_secimleri" not in st.session_state:
-    st.session_state.vida_secimleri = []
-if "aktif_vida" not in st.session_state:
-    st.session_state.aktif_vida = None
-if "takimlar" not in st.session_state:
-    st.session_state.takimlar = {"Rotor": False, "Kapaklar": False, "Fan Pervanesi": False, "Muhafaza": False}
-if "loto_kilidi" not in st.session_state:
-    st.session_state.loto_kilidi = True # İş güvenliği kilidi aktif başlar
-if "ana_salter" not in st.session_state:
-    st.session_state.ana_salter = False
+if "pano_enerji" not in st.session_state:
+    st.session_state.pano_enerji = False
+if "sim_durum" not in st.session_state:
+    st.session_state.sim_durum = "DURUYOR" # DURUYOR, YILDIZ, GECIS, UCGEN
+if "gecen_sure" not in st.session_state:
+    st.session_state.gecen_sure = 0.0
 
-# --- SOL BÖLÜM: MEKANİK MONTAJ MASASI (TEZGAH) ---
-col_sol, col_orta, col_sag = st.columns([1.1, 1.2, 1.2])
+# --- PARAMETRE AYARLARI (SOL PANEL) ---
+col_sol, col_orta, col_sag = st.columns([1, 1.2, 1.3])
 
 with col_sol:
-    st.subheader("🔧 1. Mekanik Montaj Tezgahı")
-    st.write("_Parçaları sırasıyla motora çakmalı veya vidalamalısın. Sıralama hatası rulmanları dağıtır!_")
+    st.subheader("🎛️ Pano Ayarları")
+    zaman_ayari = st.slider("Zaman Rölesi Süresi (Saniye)", 2, 8, 5)
+    motor_yuku = st.slider("Motor Mekanik Yükü (Nm)", 0, 40, 15)
     
-    # Gerçekçi montaj sırası kontrolü
-    def parca_aksiyon(parca, tak):
-        if tak:
-            # Mantıksal montaj sırası kontrolleri
-            if parca == "Kapaklar" and not st.session_state.takimlar["Rotor"]:
-                st.error("❌ İçine Rotoru (Mili) yerleştirmeden motor kapaklarını kapatamazsın!")
-                return
-            if parca == "Fan Pervanesi" and not st.session_state.takimlar["Kapaklar"]:
-                st.error("❌ Arka kapağı takmadan fan pervanesini mile çakamazsın!")
-                return
-            if parca == "Muhafaza" and not st.session_state.takimlar["Fan Pervanesi"]:
-                st.error("❌ Pervaneyi takmadan dış sac muhafaza kapağını vidalayamazsın!")
-                return
-            st.session_state.takimlar[parca] = True
-        else:
-            # Sökme sırası kontrolleri
-            if parca == "Fan Pervanesi" and st.session_state.takimlar["Muhafaza"]:
-                st.error("❌ Dış koruma muhafaza sacını sökmeden pervaneye ulaşamazsın!")
-                return
-            if parca == "Kapaklar" and st.session_state.takimlar["Fan Pervanesi"]:
-                st.error("❌ Önce pervaneyi milden çekmen gerekiyor!")
-                return
-            if parca == "Rotor" and st.session_state.takimlar["Kapaklar"]:
-                st.error("❌ Rulman kapakları cıvatalarla sıkılıyken rotoru çekip çıkaramazsın!")
-                return
-            st.session_state.takimlar[parca] = False
-        st.rerun()
-
-    for p, durum in st.session_state.takimlar.items():
-        cc1, cc2 = st.columns([2, 1])
-        cc1.write(f"▪️ **{p}** " + ("(📦 Yatakta/Takılı)" if durum else "(🛠️ Tezgahta Boşta)"))
-        if durum:
-            if cc2.button("Sök", key=f"sok_{p}", use_container_width=True):
-                parca_aksiyon(p, False)
-        else:
-            if cc2.button("Monte Et", key=f"tak_{p}", use_container_width=True):
-                parca_aksiyon(p, True)
-
     st.markdown("---")
-    st.subheader("🚨 2. İş Güvenliği (LOTO)")
-    st.write("_Elektrik panosunda çalışırken birinin yanlışlıkla şalteri kaldırmaması için asma kilidini tak/çıkar._")
-    if st.session_state.loto_kilidi:
-        if st.button("🔓 Kilidi Sök (Çalışmayı Bitirdim)", type="secondary", use_container_width=True):
-            st.session_state.loto_kilidi = False
-            st.rerun()
-    else:
-        if st.button("🔒 Panoyu Kilitle (Güvenli Çalışma)", type="primary", use_container_width=True):
-            st.session_state.loto_kilidi = True
-            st.session_state.ana_salter = False
-            st.rerun()
+    st.subheader("🧱 Pano İçi Cihazlar")
+    
+    # Kontaktörlerin durumuna göre renkli gösterge
+    def kontaktor_isigi(durum):
+        return "🟢 ÇEKTİ (KAPALI)" if durum else "🔴 BIRAKTI (AÇIK)"
+    
+    k_ana = st.session_state.sim_durum in ["YILDIZ", "GECIS", "UCGEN"]
+    k_yildiz = st.session_state.sim_durum == "YILDIZ"
+    k_ucgen = st.session_state.sim_durum == "UCGEN"
+    
+    st.write(f"**[M] Ana Kontaktör:** {kontaktor_isigi(k_ana)}")
+    st.write(f"**[Y] Yıldız Kontaktörü:** {kontaktor_isigi(k_yildiz)}")
+    st.write(f"**[D] Üçgen Kontaktörü:** {kontaktor_isigi(k_ucgen)}")
 
-# --- ORTA BÖLÜM: GERÇEKÇİ KLEMENS KUTUSU ---
+# --- ANLIK KUMANDA ŞEMASI VE BUTONLAR (ORTA PANEL) ---
 with col_orta:
-    st.subheader("🔌 3. Klemens Kutusu İç Görünümü")
-    st.write("_Uçlara dokunarak köprü lamalarını tornavida ile sıkıştır. Şebeke uçları (L1, L2, L3) direkt alt sıraya bağlıdır._")
+    st.subheader("🕹️ Operatör Kumanda Paneli")
     
-    # Mevcut Bağlantı Durumu
-    if st.session_state.vida_secimleri:
-        st.write("**Klemense Çakılan Lamalar/Kablolar:**")
-        for v1, v2 in st.session_state.vida_secimleri:
-            st.code(f"🔩 [{v1}]  <=========>  🔩 [{v2}]", language="text")
-        if st.button("🛠️ Penseyle Tüm Köprüleri Sök", use_container_width=True):
-            st.session_state.vida_secimleri = []
-            st.session_state.aktif_vida = None
-            st.rerun()
-    else:
-        st.info("Klemens kutusu bomboş. Bobin uçları açıkta duruyor.")
-
-    if st.session_state.aktif_vida:
-        st.warning(f"🔧 Penseyle **{st.session_state.aktif_vida}** ucunu tuttun. Köprünün diğer ucunu sıkmak için bir vida seç.")
-
-    st.markdown("### `[ MOTOR KLEMENS BLOĞU ]`")
+    c_btn1, c_btn2 = st.columns(2)
+    start_basildi = c_btn1.button("🟢 START (Başlat)", type="primary", use_container_width=True)
+    stop_basildi = c_btn2.button("🔴 STOP (Durdur)", type="secondary", use_container_width=True)
     
-    def baglanti_yap(vida_adi):
-        if st.session_state.loto_kilidi == False and st.session_state.ana_salter == True:
-            st.error("⚡ Dur! Enerji altındaki klemense çıplak elle dokunamazsın! Çarpılırsın!")
-            return
-        if st.session_state.aktif_vida is None:
-            st.session_state.aktif_vida = vida_adi
-        else:
-            if st.session_state.aktif_vida != vida_adi:
-                st.session_state.vida_secimleri.append(tuple(sorted((st.session_state.aktif_vida, vida_adi))))
-            st.session_state.aktif_vida = None
+    if start_basildi and st.session_state.sim_durum == "DURUYOR":
+        st.session_state.pano_enerji = True
+        st.session_state.sim_durum = "YILDIZ"
+        st.session_state.gecen_sure = 0.0
+        st.rerun()
+        
+    if stop_basildi:
+        st.session_state.pano_enerji = False
+        st.session_state.sim_durum = "DURUYOR"
+        st.session_state.gecen_sure = 0.0
         st.rerun()
 
-    # Klemens Görsel Arayüz Matrisi
-    st.caption("**Üst Sıra (Sargı Çıkışları - Çapraz Etiketli)**")
-    c_w2, c_u2, c_v2 = st.columns(3)
-    if c_w2.button("W2 🔩", key="W2"): baglanti_yap("W2")
-    if c_u2.button("U2 🔩", key="U2"): baglanti_yap("U2")
-    if c_v2.button("V2 🔩", key="V2"): baglanti_yap("V2")
-
-    # İç Sargı Gösterimi (Gerçekçi Akı Hatları)
-    st.code("""
-      │   │   │   (İç Bobin Sargıları)
-      ├───┼───┤   U1-U2  /  V1-V2  /  W1-W2
-      │   │   │   [Döküm Gövde İzolasyonu]
-    """, language="text")
-
-    st.caption("**Alt Sıra (Giriş Fazları L1 - L2 - L3 Bağlı)**")
-    c_u1, c_v1, c_w1 = st.columns(3)
-    if c_u1.button("U1 🔩", key="U1"): baglanti_yap("U1")
-    if c_v1.button("V1 🔩", key="V1"): baglanti_yap("V1")
-    if c_w1.button("W1 🔩", key="W1"): baglanti_yap("W1")
-
-# --- SAĞ BÖLÜM: DIŞ TEST PANOSU VE ANALİZ ---
-with col_sag:
-    st.subheader("🖥️ 4. Güç Dağıtım ve Test Panosu")
-    
-    # Şalter ve Enerji Durumu
-    if st.session_state.loto_kilidi:
-        st.error("🔒 PANO KİLİTLİ: LOTO asma kilidi şalter mekanizmasını fiziksel olarak engelliyor! Enerji veremezsin.")
-    else:
-        if not st.session_state.ana_salter:
-            if st.button("⚡ ANA ŞALTERİ YUKARI KALDIR", type="primary", use_container_width=True):
-                st.session_state.ana_salter = True
-                st.rerun()
-        else:
-            if st.button("🛑 ŞALTERİ AŞAĞI İNDİR (ACİL)", type="secondary", use_container_width=True):
-                st.session_state.ana_salter = False
-                st.rerun()
-
     st.markdown("---")
-    st.subheader("📊 Motor Davranış Analizi")
+    st.subheader("🖥️ Akış Şeması Görünümü")
+    
+    # Simülasyon durumuna göre dinamik ASCII şema
+    if st.session_state.sim_durum == "DURUYOR":
+        st.code("""
+        [ŞEBEKE] ──X── [Ana Kontaktör] ────> [Motor Sargı Girişleri: U1, V1, W1]
+                                                    
+        [KÖPRÜ YOK] ──X── [Yıldız Kont.] ──> [Motor Çıkışları: W2, U2, V2]
+        [KÖPRÜ YOK] ──X── [Üçgen Kont.]  ──> [Motor Çıkışları: W2, U2, V2]
+         STATUS: MOTOR DURUYOR - GÜVENLİ DURUM
+        """, language="text")
+    elif st.session_state.sim_durum == "YILDIZ":
+        st.code(f"""
+        [ŞEBEKE] ═════ [Ana Kontaktör] ════> [Motor Sargı Girişleri: U1, V1, W1]
+                                                    
+        [YILDIZ] ═════ [Yıldız Kont.] ════> [W2 + U2 + V2 KISA DEVRE EDİLDİ] ⭐
+        [AÇIK  ] ──X── [Üçgen Kont.]
+         STATUS: YILDIZ KALKIŞ YAPILIYOR... ZAMAN RÖLESİ: {zaman_ayari - int(st.session_state.gecen_sure)} sn kaldı!
+        """, language="text")
+    elif st.session_state.sim_durum == "UCGEN":
+        st.code("""
+        [ŞEBEKE] ═════ [Ana Kontaktör] ════> [Motor Sargı Girişleri: U1, V1, W1]
+                                                    
+        [AÇIK  ] ──X── [Yıldız Kont.]
+        [ÜÇGEN ] ═════ [Üçgen Kont.]  ════> [U1-W2 // V1-U2 // W1-V2 BAĞLANDI] 🔺
+         STATUS: MOTOR TAM GÜÇ ÜÇGEN MODUNDA ÇALIŞIYOR!
+        """, language="text")
 
-    if st.session_state.ana_salter and not st.session_state.loto_kilidi:
-        # Durum Değişkenleri
-        mekanik_durum = all(st.session_state.takimlar.values())
-        kablolar = set(st.session_state.vida_secimleri)
+# --- GERÇEK ZAMANLI TELEMETRİ VE GRAFİK (SAĞ PANEL) ---
+with col_sag:
+    st.subheader("📈 Gerçek Zamanlı Akım ve Hız Analizi")
+    
+    if st.session_state.pano_enerji:
+        # Zaman simülasyonunu tetiklemek için Streamlit bileşeni boşluğu
+        placeholder = st.empty()
         
-        # Yıldız ve Üçgen mantık setleri
-        yildiz_mod_1 = {("U2", "W2"), ("U2", "V2")}.issubset(kablolar)
-        yildiz_mod_2 = {("W2", "V2"), ("U2", "V2")}.issubset(kablolar)
-        yildiz_ok = yildiz_mod_1 or yildiz_mod_2
+        # Grafik için boş listeler
+        zaman_serisi = []
+        akim_serisi = []
+        hiz_serisi = []
         
-        ucgen_ok = {("U1", "W2"), ("U2", "V1"), ("V2", "W1")}.issubset(kablolar)
-        faz_faz_kisa_devre = any(kd in kablolar for kd in [("U1", "V1"), ("V1", "W1"), ("U1", "W1")])
-
-        # Senaryo 1: Mekanik Eksiklik Arızaları
-        if not st.session_state.takimlar["Rotor"]:
-            st.error("💥 **BOŞTA ÇALIŞMA PATLAMASI!** Gövdenin içinde dönecek bir rotor yok! Stator sargıları saniyeler içinde aşırı indüklenerek yandı, atölyeyi duman kapladı.")
-        elif not st.session_state.takimlar["Kapaklar"]:
-            st.error("⚠️ **RULMAN YATAKSIZLIK ARIZASI:** Kapaklar takılmadığı için rotor yerinden fırladı ve statora çarparak sıkıştı. Aşırı akımdan sigorta attı!")
+        # 40 adımlık bir zaman simülasyonu döngüsü (Toplamda zaman rölesi süresi + 3 saniye üçgen izleme)
+        toplam_adim = (zaman_ayari + 3) * 4
         
-        # Senaryo 2: Elektriksel Bağlantı Hataları
-        elif faz_faz_kisa_devre:
-            st.error("🔥 **BÜYÜK PATLAMA:** Ana hat fazlarını (L1-L2-L3) klemens üzerinde birbirine köprülediniz! Atölyedeki ana dağıtım panosunun TMŞ şalteri gürültüyle düştü.")
-        
-        elif ucgen_ok:
-            st.success("🔄 **MÜKEMMEL ÇALIŞMA (ÜÇGEN BAĞLANTI):** Motor nominal 380V gerilim altında tam tork ve güçle dönmeye başladı!")
-            if not st.session_state.takimlar["Fan Pervanesi"]:
-                st.warning("🚨 **DİKKAT:** Fan pervanesi takılı değil! Motor soğuyamıyor. Sargı sıcaklığı lineer yükseliyor, motor 5 dakika içinde yanacak!")
-            st.metric(label="Rotor Devri", value="1475 RPM", delta="Nominal Hız")
-            st.metric(label="Çekilen Akım ($I$)", value="11.4 Amper")
+        for adim in range(toplam_adim):
+            t = adim * 0.25
+            zaman_serisi.append(t)
+            st.session_state.gecen_sure = t
             
-        elif yildiz_ok:
-            st.success("⭐ **BAŞARILI KALKIŞ (YILDIZ BAĞLANTI):** Motor sarsıntısız ve düşük akımla kalkış yaptı, stabil bir şekilde dönüyor.")
-            st.metric(label="Rotor Devri", value="1440 RPM", delta="-35 RPM Kayma")
-            st.metric(label="Çekilen Akım ($I$)", value="6.5 Amper", delta="-4.9 A (Ekonomi)")
+            if t < zaman_ayari:
+                st.session_state.sim_durum = "YILDIZ"
+                # Yıldız modu fiziği: Akım 3-4 Amperle başlar, hızlandıkça düşer
+                anlik_hiz = 1440 * (1 - np.exp(-t/1.2))
+                anlik_akim = 15.0 * np.exp(-t/1.0) + 4.5 + (motor_yuku * 0.1)
+            else:
+                st.session_state.sim_durum = "UCGEN"
+                # Üçgen modu fiziği: Geçiş anında ani akım sıçraması (Pik akımı)
+                gecis_t = t - zaman_ayari
+                anlik_hiz = 1480 - (motor_yuku * 0.5) * (1 - np.exp(-gecis_t))
+                # İlk salisede akım fırlar, sonra nominal üçgen akımına oturur
+                anlik_akim = 28.0 * np.exp(-gecis_t/0.3) + 8.0 + (motor_yuku * 0.2)
+                
+            akim_serisi.append(anlik_akim)
+            hiz_serisi.append(anlik_hiz)
             
-        elif len(kablolar) == 0:
-            st.warning("🔇 **AKIM SIFIR:** Klemensler boşta olduğu için devreden akım geçmiyor. Motorda tık yok.")
-        
-        else:
-            st.error("⚡ **FAZ DENGESİZLİĞİ / AŞIRI UĞULTU:** Köprüleri rastgele veya eksik bağladınız. Motor dönmüyor, yüksek sesle uğulduyor ve şebekeden 40 Amper bloke rotor akımı çekiyor!")
-            st.metric(label="Çekilen Akım", value="42.0 A", delta="TEHLİKELİ SEVİYE")
-
+            # Canlı Metrik Güncelleme
+            with placeholder.container():
+                c_m1, c_m2 = st.columns(2)
+                c_m1.metric("Anlık Hat Akımı", f"{round(anlik_akim, 1)} Amper")
+                c_m2.metric("Motor Devri", f"{int(anlik_hiz)} RPM")
+                
+                # Dinamik Grafik
+                df_grafik = pd.DataFrame({
+                    "Zaman (sn)": zaman_serisi,
+                    "Şebekeden Çekilen Akım (A)": akim_serisi,
+                    "Rotor Hızı (RPM)": hiz_serisi
+                }).set_index("Zaman (sn)")
+                
+                st.line_chart(df_grafik[["Şebekeden Çekilen Akım (A)"]])
+            
+            time.sleep(0.08) # Görsel akış için hafif gecikme
+            
+        st.success("🎉 Geçiş Başarıyla Tamamlandı! Akım grafiğindeki ani zıplamaya (pik) dikkat edin. İşte endüstrideki yıldız-üçgen geçişinin tam elektriksel karakteristiği budur.")
+        st.session_state.gecen_sure = zaman_ayari
     else:
-        st.info("Tezgâhta elektrik yok. İş emri adımlarını takip ederek mekanik parçaları birleştirin ve klemens kutusunu hazır hale getirin.")
+        st.info("Pano kapalı. Motorun kalkışını ve Yıldız'dan Üçgen'e geçiş anındaki akım grafiğini görmek için sol taraftan START butonuna basın.")
