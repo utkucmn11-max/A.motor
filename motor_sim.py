@@ -1,204 +1,195 @@
 import streamlit as st
+from PIL import Image
+import requests
+from io import BytesIO
 
-# Sayfa Genişlik Ayarı
-st.set_page_config(page_title="Asenkron Motor Simülatörü", layout="wide")
+# Sayfa yapılandırması
+st.set_page_config(page_title="Manuel Asenkron Motor Simülatörü", layout="wide")
 
-st.title("⚙️ 3 Fazlı Asenkron Motor Montaj & Klemens Bağlantı Simülatörü")
-st.write("Bu simülatör ile motor parçalarını söküp takabilir, klemens kutusunda Yıldız/Üçgen bağlantı yapabilir ve motoru test edebilirsiniz.")
+st.title("⚙️ Manuel Asenkron Motor Montaj & Klemens Bağlantı Simülatörü")
+st.write("Bu simülatörde kararları ve bağlantıları tamamen **manuel** olarak siz yaparsınız. Yanlış bağlantı motoru yakabilir!")
 
-# --- SESSION STATE INITIALIZATION ---
-if "step" not in st.session_state:
-    st.session_state.step = "Montaj / Demontaj"
-if "motor_state" not in st.session_state:
-    st.session_state.motor_state = {
-        "fan_kapagi": True,
-        "fan": True,
-        "arka_kapak": True,
-        "rotor": True,
-        "on_kapak": True,
-        "gövde_ve_stator": True
+# --- GÖRSEL KAYNAKLARI (Gerçekçi Şemalar ve Fotoğraflar) ---
+# Gerçekçi motor görseli ve klemens kutusu altyapısı için telifsiz/açık kaynaklı eğitim görselleri
+MOTOR_IMG_URL = "https://images.unsplash.com/photo-1617791160505-6f006e121980?q=80&w=600&auto=format&fit=crop" # Temsili Endüstriyel Motor
+KLEMENS_BG_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Terminal_bloks_01.jpg/640px-Terminal_bloks_01.jpg" # Gerçek Klemens Bloğu
+
+@st.cache_data
+def load_image(url):
+    try:
+        response = requests.get(url)
+        return Image.open(BytesIO(response.content))
+    except:
+        # İnternet olmaması durumunda yedek boş görsel
+        return Image.new('RGB', (400, 300), color = '#7F8C8D')
+
+motor_img = load_image(MOTOR_IMG_URL)
+
+# --- SESSION STATE (DURUM YÖNETİMİ) ---
+if "mekanik_parcalar" not in st.session_state:
+    st.session_state.mekanik_parcalar = {
+        "Gövde ve Stator": True,
+        "Rotor (Mil)": False,
+        "Ön ve Arka Kapaklar": False,
+        "Soğutma Fanı (Pervane)": False,
+        "Fan Muhafaza Kapağı": False
     }
-if "klemens_kopruleri" not in st.session_state:
-    st.session_state.klemens_kopruleri = "Yok"
-if "enerji_verildi" not in st.session_state:
-    st.session_state.enerji_verildi = False
 
-# --- KENAR ÇUBUĞU (NAVİGASYON) ---
-st.sidebar.header("📍 Simülasyon Adımları")
-st.session_state.step = st.sidebar.radio(
-    "Gitmek istediğiniz adımı seçin:",
-    ["Montaj / Demontaj", "Klemens Kutusu Bağlantısı", "Motor Test & Çalıştırma"]
-)
+if "kablolar" not in st.session_state:
+    st.session_state.kablolar = []  # Kullanıcının manuel yaptığı bağlantıları tutar: Örn: [("W2", "U2"), ("U2", "V2")]
 
-# --- ADIM 1: MONTAJ / DEMONTAJ ---
-if st.session_state.step == "Montaj / Demontaj":
-    st.header("🛠️ Motor Mekanik Montaj / Demontaj")
-    st.write("Motoru sökmek için dıştan içe doğru parçaları kaldırın. Toplamak için tam tersi sırayı takip edin.")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Parça Kontrol Paneli")
-        # Sökme/Takma butonları (Mantıksal sıra kontrolü ile)
-        # Fan Kapağı
-        if st.session_state.motor_state["fan_kapagi"]:
-            if st.button("❌ Fan Kapağını Sök"):
-                st.session_state.motor_state["fan_kapagi"] = False
-                st.rerun()
-        else:
-            if st.button("✅ Fan Kapağını Tak") and st.session_state.motor_state["fan"]:
-                st.session_state.motor_state["fan_kapagi"] = True
-                st.rerun()
-                
-        # Fan
-        if st.session_state.motor_state["fan"]:
-            if st.button("❌ Pervaneyi (Fan) Sök") and not st.session_state.motor_state["fan_kapagi"]:
-                st.session_state.motor_state["fan"] = False
-                st.rerun()
-        else:
-            if st.button("✅ Pervaneyi (Fan) Tak") and st.session_state.motor_state["arka_kapak"]:
-                st.session_state.motor_state["fan"] = True
-                st.rerun()
-                
-        # Arka Kapak
-        if st.session_state.motor_state["arka_kapak"]:
-            if st.button("❌ Arka Kapağı Sök") and not st.session_state.motor_state["fan"]:
-                st.session_state.motor_state["arka_kapak"] = False
-                st.rerun()
-        else:
-            if st.button("✅ Arka Kapağı Tak") and st.session_state.motor_state["rotor"]:
-                st.session_state.motor_state["arka_kapak"] = True
-                st.rerun()
-                
-        # Rotor ve Ön Kapak
-        if st.session_state.motor_state["rotor"]:
-            if st.button("❌ Rotoru (Mil dahil) Çıkar") and not st.session_state.motor_state["arka_kapak"]:
-                st.session_state.motor_state["rotor"] = False
-                st.rerun()
-        else:
-            if st.button("✅ Rotoru Statora Yerleştir"):
-                st.session_state.motor_state["rotor"] = True
-                st.rerun()
+if "secili_vida" not in st.session_state:
+    st.session_state.secili_vida = None
 
-    with col2:
-        st.subheader("Motorun Anlık Durumu (Görsel Model)")
-        # Motorun iç/dış yapısını temsil eden dinamik text tabanlı şema
-        st.code(f"""
-        [ R E D Ü K S İ Y O N  /  M İ L ]
-                       ||
-        [Ön Kapak]    : {"MONTAJLI  🟢" if st.session_state.motor_state["on_kapak"] else "SÖKÜLMÜŞ 🔴"}
-        [Stator/Gövde]: {"MONTAJLI  🟢" if st.session_state.motor_state["gövde_ve_stator"] else "SÖKÜLMÜŞ 🔴"}
-        [Rotor (İç) ] : {"İÇERİDE   🟢" if st.session_state.motor_state["rotor"] else "ÇIKARILMIŞ 🔴"}
-        [Arka Kapak]  : {"MONTAJLI  🟢" if st.session_state.motor_state["arka_kapak"] else "SÖKÜLMÜŞ 🔴"}
-        [Pervane/Fan] : {"MONTAJLI  🟢" if st.session_state.motor_state["fan"] else "SÖKÜLMÜŞ 🔴"}
-        [Fan Kapağı]  : {"MONTAJLI  🟢" if st.session_state.motor_state["fan_kapagi"] else "SÖKÜLMÜŞ 🔴"}
-        """)
-        
-        # Tamamen sökülme veya toplanma durum kontrolü
-        is_assembled = all(st.session_state.motor_state.values())
-        if is_assembled:
-            st.success("🎉 Motor tamamen monte edildi! Klemens kutusu bağlantısına geçebilirsiniz.")
-        else:
-            st.warning("⚠️ Motor şu an demonte durumda. Test etmeden önce tüm parçaları sırasıyla birleştirin.")
+if "salter" not in st.session_state:
+    st.session_state.salter = False
 
-# --- ADIM 2: KLEMENS KUTUSU BAĞLANTISI ---
-elif st.session_state.step == "Klemens Kutusu Bağlantısı":
-    st.header("🔌 Klemens Kutusu ve Köprü Bağlantıları")
-    st.write("3 fazlı motorun bobin uçları (U1, V1, W1 ve W2, U2, V2) klemens kutusuna çıkarılmıştır. Şebeke voltajına göre uygun köprülemeyi seçin.")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Bağlantı Tipi Seçimi")
-        kopru = st.radio(
-            "Klemens köprülerini nasıl bağlamak istersiniz?",
-            ["Yok (Bağlantısız)", "Yıldız Bağlantı (Köprü U2-V2-W2 arasında)", "Üçgen Bağlantı (Köprüler U1-W2, V1-U2, W1-V2 arasında)"]
-        )
-        
-        if kopru == "Yok (Bağlantısız)":
-            st.session_state.klemens_kopruleri = "Yok"
-        elif "Yıldız" in kopru:
-            st.session_state.klemens_kopruleri = "Yildiz"
-        elif "Üçgen" in kopru:
-            st.session_state.klemens_kopruleri = "Ucgen"
+# --- SOL PANEL: MEKANİK MONTAJ (MANUEL) ---
+col_mekanik, col_klemens, col_kontrol = st.columns([1, 1.5, 1])
 
-    with col2:
-        st.subheader("Klemens Görünümü")
-        
-        if st.session_state.klemens_kopruleri == "Yok":
-            st.code("""
-            [W2]   [U2]   [V2]  <- Bobin Çıkışları
-             |      |      |
-            [U1]   [V1]   [W1]  <- Şebeke Girişleri (L1, L2, L3)
-            """)
-            st.info("ℹ️ Köprü bulunmuyor. Bu durumda motora enerji verilirse motor çalışmaz ve koruma atar.")
-            
-        elif st.session_state.klemens_kopruleri == "Yildiz":
-            st.code("""
-            [W2]===[U2]===[V2]  <- Üst uçlar kısa devre (KÖPRÜ)
-             |      |      |
-            [U1]   [V1]   [W1]  <- Şebeke Girişleri (L1, L2, L3)
-            """)
-            st.success("⭐ Yıldız bağlantı yapıldı. Yüksek voltaj şebekelerinde (örn. 380V/660V motorun 380V şebekede çalışması) tercih edilir.")
-            
-        elif st.session_state.klemens_kopruleri == "Ucgen":
-            st.code("""
-            [W2]   [U2]   [V2]
-             ||     ||     ||   <- Karşılıklı dikey köprüler
-            [U1]   [V1]   [W1]  <- Şebeke Girişleri (L1, L2, L3)
-            """)
-            st.success("🔺 Üçgen bağlantı yapıldı. Düşük voltaj şebekelerinde veya motor nominal geriliminin tam alındığı durumlarda tercih edilir.")
+with col_mekanik:
+    st.header("🛠️ 1. Mekanik Montaj")
+    st.image(motor_img, caption="Endüstriyel Asenkron Motor", use_container_width=True)
+    
+    st.subheader("Parçaları Manuel Tak/Sök")
+    st.info("Motorun dönmesi için mekanik parçaların sırasıyla doğru takılması gerekir.")
+    
+    # Manuel olarak sırayla takılması için butonlar
+    for parca, takili mi in st.session_state.mekanik_parcalar.items():
+        durum_rengi = "🟢 Takılı" if takili mi else "🔴 Sökük"
+        col_btn1, col_btn2 = st.columns([2, 1])
+        with col_btn1:
+            st.write(f"**{parca}** ({durum_rengi})")
+        with col_btn2:
+            if takili mi:
+                if st.button("Sök", key=f"sok_{parca}"):
+                    st.session_state.mekanik_parcalar[parca] = False
+                    st.rerun()
+            else:
+                if st.button("Tak", key=f"tak_{parca}"):
+                    st.session_state.mekanik_parcalar[parca] = True
+                    st.rerun()
 
-# --- ADIM 3: MOTOR TEST & ÇALIŞTIRMA ---
-elif st.session_state.step == "Motor Test & Çalıştırma":
-    st.header("⚡ Motor Test ve Enerji Paneli")
+# --- ORTA PANEL: MANUEL KLEMENS BAĞLANTISI ---
+with col_klemens:
+    st.header("🔌 2. Manuel Klemens Bağlantısı")
+    st.write("Köprü atmak veya kablo bağlamak için önce **1. vidayı**, sonra bağlamak istediğiniz **2. vidayı** seçin.")
     
-    # Mekanik ve elektriksel kontrollerin yapılması
-    motor_toplu = all(st.session_state.motor_state.values())
-    baglanti = st.session_state.klemens_kopruleri
+    # Vidaların listesi
+    ust_siralar = ["W2", "U2", "V2"]
+    alt_siralar = ["U1", "V1", "W1"]
     
-    st.subheader("Durum Raporu")
-    c1, c2 = st.columns(2)
-    with c1:
-        if motor_toplu:
-            st.success("✅ Mekanik Durum: Motor tamamen toplandı.")
-        else:
-            st.error("❌ Mekanik Durum: Motor parçaları eksik! (Demontaj adımına dönüp motoru toplayın)")
-            
-    with c2:
-        if baglanti != "Yok":
-            st.success(f"✅ Elektriksel Durum: Klemens kutusunda '{baglanti}' köprüsü kurulu.")
-        else:
-            st.error("❌ Elektriksel Durum: Klemens kutusunda köprü yok!")
+    # Mevcut bağlantıları listeleme ve temizleme
+    st.subheader("Yapılan Bağlantılar (Köprüler):")
+    if not st.session_state.kablolar:
+        st.write("_Henüz bir köprü bağlantısı yapmadınız._")
+    else:
+        for idx, (v1, v2) in enumerate(st.session_state.kablolar):
+            st.code(f"🔗 Köprü: {v1}  <--->  {v2}")
+        if st.button("🧹 Tüm Bağlantıları Sök / Temizle"):
+            st.session_state.kablolar = []
+            st.session_state.secili_vida = None
+            st.rerun()
 
-    st.write("---")
-    st.subheader("Enerji Kontrolü")
+    # Manuel Seçim Arayüzü
+    st.markdown("---")
+    st.write("**Bağlantı Kurma Paneli:**")
     
-    # Enerji verme butonu
-    if not st.session_state.enerji_verildi:
-        if st.button("🔌 Şebeke Şalterini Kaldır (Enerji Ver)"):
-            st.session_state.enerji_verildi = True
+    if st.session_state.secili_vida:
+        st.warning(f"Bağlantı Başlangıcı Seçildi: **{st.session_state.secili_vida}**. Şimdi bağlanacak ikinci vidayı seçin.")
+    else:
+        st.info("Lütfen bağlantı kurmak için bir vidaya tıklayın.")
+
+    # Klemens Kutusu Matrisi (Görsel Butonlar)
+    st.write("**[ KLEMENS KUTUSU VİDALARI ]**")
+    
+    # Üst Sıra Vidalar (W2, U2, V2)
+    c_w2, c_u2, c_v2 = st.columns(3)
+    with c_w2: 
+        if st.button("🔩 W2", use_container_width=True): 
+            st.session_state.secili_vida = "W2" if not st.session_state.secili_vida else (st.session_state.kablolar.append((st.session_state.secili_vida, "W2")) or None)
+            st.rerun()
+    with c_u2: 
+        if st.button("🔩 U2", use_container_width=True): 
+            st.session_state.secili_vida = "U2" if not st.session_state.secili_vida else (st.session_state.kablolar.append((st.session_state.secili_vida, "U2")) or None)
+            st.rerun()
+    with c_v2: 
+        if st.button("🔩 V2", use_container_width=True): 
+            st.session_state.secili_vida = "V2" if not st.session_state.secili_vida else (st.session_state.kablolar.append((st.session_state.secili_vida, "V2")) or None)
+            st.rerun()
+
+    st.write(" \n ") # Boşluk (Bobinleri simüle etmek için dikey mesafe)
+    
+    # Alt Sıra Vidalar (U1, V1, W1)
+    c_u1, c_v1, c_w1 = st.columns(3)
+    with c_u1: 
+        if st.button("🔩 U1", use_container_width=True): 
+            st.session_state.secili_vida = "U1" if not st.session_state.secili_vida else (st.session_state.kablolar.append((st.session_state.secili_vida, "U1")) or None)
+            st.rerun()
+    with c_v1: 
+        if st.button("🔩 V1", use_container_width=True): 
+            st.session_state.secili_vida = "V1" if not st.session_state.secili_vida else (st.session_state.kablolar.append((st.session_state.secili_vida, "V1")) or None)
+            st.rerun()
+    with c_w1: 
+        if st.button("🔩 W1", use_container_width=True): 
+            st.session_state.secili_vida = "W1" if not st.session_state.secili_vida else (st.session_state.kablolar.append((st.session_state.secili_vida, "W1")) or None)
+            st.rerun()
+
+# --- SAĞ PANEL: KONTROL PANELİ VE ANALİZ ---
+with col_kontrol:
+    st.header("⚡ 3. Enerji & Test")
+    
+    # Şalter Kontrolü
+    st.write("Bağlantılarınız bittiyse şalteri manuel olarak kaldırın:")
+    if not st.session_state.salter:
+        if st.button("🛑 ŞALTER KAPALI (Açmak için Tıkla)", type="primary", use_container_width=True):
+            st.session_state.salter = True
             st.rerun()
     else:
-        if st.button("🛑 Şalteri İndir (Enerjiyi Kes)"):
-            st.session_state.enerji_verildi = False
+        if st.button("🟢 ŞALTER AÇIK (Kapatmak için Tıkla)", type="secondary", use_container_width=True):
+            st.session_state.salter = False
             st.rerun()
-            
-    # Simülasyon Çıktısı Ekranı
-    st.subheader("🖥️ Motor Çalışma Analizi")
+
+    st.subheader("📋 Simülasyon Sonucu")
     
-    if st.session_state.enerji_verildi:
-        if not motor_toplu:
-            st.error("💥 GÜVENLİK ALARMI: Motor parçaları açıkta veya rotor tam yerleşmediği için mekanik sıkışma yaşandı. Sigortalar ATTI!")
-        elif baglanti == "Yok":
-            st.warning("🔇 Motor uğulduyor ama dönmüyor: Klemens kutusunda devre tamamlanmadı (bobin uçları açıkta). Akım çekilemiyor.")
-        elif baglanti == "Yildiz":
-            st.success("🔄 MOTOR DÖNÜYOR (Yıldız Modu): Motor kalkış akımını düşük tutarak sarsıntısız bir şekilde çalışmaya başladı. Nominal hızda stabil dönüyor.")
-            st.metric(label="Motor Hızı (RPM)", value="1450 RPM", delta="Yıldız Bağlantı")
-            st.balloons()
-        elif baglanti == "Ucgen":
-            st.success("⚡ MOTOR DÖNÜYOR (Üçgen Modu): Motor tam güç ve nominal tork ile çalışıyor. Yüksek kalkış akımı çekildi.")
-            st.metric(label="Motor Hızı (RPM)", value="1480 RPM", delta="Üçgen Bağlantı - Tam Güç")
-            st.balloons()
+    if st.session_state.salter:
+        # 1. Kontrol: Mekanik Durum
+        mekanik_tam = all(st.session_state.mekanik_parcalar.values())
+        
+        # 2. Kontrol: Elektriksel Bağlantı Analizi (Kullanıcının yaptığı manuel kombinasyonlar)
+        baglantilar = st.session_state.kablolar
+        
+        # Set mantığı ile çift yönlü eşleşmeleri kontrol etmek için normalize ediyoruz
+        norm_baglanti = set(tuple(sorted(p)) for p in baglantilar)
+        
+        # Yıldız Bağlantı Kontrolü (W2-U2 ve U2-V2 veya W2-V2 köprülenmiş olmalı)
+        yildiz_kopruleri = {("U2", "W2"), ("U2", "V2")}
+        is_yildiz = yildiz_kopruleri.issubset(norm_baglanti) or {("W2", "V2"), ("U2", "V2")}.issubset(norm_baglanti)
+        
+        # Üçgen Bağlantı Kontrolü (W2-U1, U2-V1, V2-W1 dikey köprüleri)
+        ucgen_kopruleri = {("U1", "W2"), ("U2", "V1"), ("V2", "W1")}
+        is_ucgen = ucgen_kopruleri.issubset(norm_baglanti)
+
+        # Kapsamlı Hata/Kısa Devre Senaryoları (Örn: Giriş fazlarını kendi arasında kısa devre etmek)
+        kisa_devre_giris = {("U1", "V1"), ("V1", "W1"), ("U1", "W1")}
+        is_kisa_devre = any(kd in norm_baglanti for kd in kisa_devre_giris)
+
+        if not mekanik_tam:
+            st.error("💥 **MEKANİK ARIZA!** Motorun parçaları (Rotor, kapaklar veya fan) tam takılmadan enerji verdiniz! Motor yüksek gürültü çıkardı, rulmanlar dağıldı ve kilitlendi.")
+        elif is_kisa_devre:
+            st.error("🔥 **PATLAMA / KISA DEVRE!** Ana şebeke girişlerini (U1-V1-W1) birbirine bağladınız. Panoda büyük bir patlama gerçekleşti ve ana sigortalar attı!")
+        elif is_ucgen:
+            st.success("🔄 **BAŞARILI: MOTOR DÖNÜYOR (ÜÇGEN BAĞLANTI)**")
+            st.info("Motor nominal geriliminde tam tork ile dönüyor. Manuel yaptığınız dikey köprüler doğru!")
+            st.metric(label="Rotor Devri", value="1480 RPM")
+        elif is_yildiz:
+            st.success("🔄 **BAŞARILI: MOTOR DÖNÜYOR (YILDIZ BAĞLANTI)**")
+            st.info("Motor düşük akım çekerek yumuşak bir kalkış yaptı ve güvenle dönüyor. Üst yatay köprünüz doğru!")
+            st.metric(label="Rotor Devri", value="1440 RPM")
+        elif len(norm_baglanti) == 0:
+            st.warning("🔇 **AKIM YOK:** Klemens kutusunda hiçbir köprü yok. Motor sargılarından akım geçmediği için hiçbir tepki vermiyor.")
+        else:
+            st.error("⚠️ **HATA: YANLIŞ BAĞLANTI!** Klemense rastgele köprüler attınız. Sargılardan dengesiz akım geçti, motor aşırı ısındı ve dumanlar çıkarmaya başladı (Motor Yanması Riski!).")
+            
     else:
-        st.info("💤 Şebekede enerji yok. Motor duruyor.")
+        st.info("Sistemde elektrik yok. Güvenle montaj yapabilir ve vidaları köprüleyebilirsiniz.")
