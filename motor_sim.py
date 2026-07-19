@@ -10,9 +10,7 @@ st.title("⚙️ Manuel Asenkron Motor Montaj & Klemens Bağlantı Simülatörü
 st.write("Bu simülatörde kararları ve bağlantıları tamamen **manuel** olarak siz yaparsınız. Yanlış bağlantı motoru yakabilir!")
 
 # --- GÖRSEL KAYNAKLARI (Gerçekçi Şemalar ve Fotoğraflar) ---
-# Gerçekçi motor görseli ve klemens kutusu altyapısı için telifsiz/açık kaynaklı eğitim görselleri
-MOTOR_IMG_URL = "https://images.unsplash.com/photo-1617791160505-6f006e121980?q=80&w=600&auto=format&fit=crop" # Temsili Endüstriyel Motor
-KLEMENS_BG_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Terminal_bloks_01.jpg/640px-Terminal_bloks_01.jpg" # Gerçek Klemens Bloğu
+MOTOR_IMG_URL = "https://images.unsplash.com/photo-1617791160505-6f006e121980?q=80&w=600&auto=format&fit=crop"
 
 @st.cache_data
 def load_image(url):
@@ -55,13 +53,13 @@ with col_mekanik:
     st.info("Motorun dönmesi için mekanik parçaların sırasıyla doğru takılması gerekir.")
     
     # Manuel olarak sırayla takılması için butonlar
-    for parca, takili mi in st.session_state.mekanik_parcalar.items():
-        durum_rengi = "🟢 Takılı" if takili mi else "🔴 Sökük"
+    for parca, takili_mi in st.session_state.mekanik_parcalar.items():
+        durum_rengi = "🟢 Takılı" if takili_mi else "🔴 Sökük"
         col_btn1, col_btn2 = st.columns([2, 1])
         with col_btn1:
             st.write(f"**{parca}** ({durum_rengi})")
         with col_btn2:
-            if takili mi:
+            if takili_mi:
                 if st.button("Sök", key=f"sok_{parca}"):
                     st.session_state.mekanik_parcalar[parca] = False
                     st.rerun()
@@ -118,7 +116,7 @@ with col_klemens:
             st.session_state.secili_vida = "V2" if not st.session_state.secili_vida else (st.session_state.kablolar.append((st.session_state.secili_vida, "V2")) or None)
             st.rerun()
 
-    st.write(" \n ") # Boşluk (Bobinleri simüle etmek için dikey mesafe)
+    st.write(" \n ") # Bobinleri simüle etmek için dikey mesafe
     
     # Alt Sıra Vidalar (U1, V1, W1)
     c_u1, c_v1, c_w1 = st.columns(3)
@@ -156,7 +154,7 @@ with col_kontrol:
         # 1. Kontrol: Mekanik Durum
         mekanik_tam = all(st.session_state.mekanik_parcalar.values())
         
-        # 2. Kontrol: Elektriksel Bağlantı Analizi (Kullanıcının yaptığı manuel kombinasyonlar)
+        # 2. Kontrol: Elektriksel Bağlantı Analizi
         baglantilar = st.session_state.kablolar
         
         # Set mantığı ile çift yönlü eşleşmeleri kontrol etmek için normalize ediyoruz
@@ -170,7 +168,7 @@ with col_kontrol:
         ucgen_kopruleri = {("U1", "W2"), ("U2", "V1"), ("V2", "W1")}
         is_ucgen = ucgen_kopruleri.issubset(norm_baglanti)
 
-        # Kapsamlı Hata/Kısa Devre Senaryoları (Örn: Giriş fazlarını kendi arasında kısa devre etmek)
+        # Kapsamlı Hata/Kısa Devre Senaryoları
         kisa_devre_giris = {("U1", "V1"), ("V1", "W1"), ("U1", "W1")}
         is_kisa_devre = any(kd in norm_baglanti for kd in kisa_devre_giris)
 
